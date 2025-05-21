@@ -1,0 +1,19 @@
+{
+  "name": "com.unity-agent-mcp",
+  "version": "1.0.0",
+  "displayName": "Unity Agent MCP",
+  "description": "Integration package for the Autonomous AI Agent Ecosystem for Unity Game Development",
+  "unity": "2022.3",
+  "dependencies": {},
+  "keywords": [
+    "ai",
+    "agent",
+    "mcp",
+    "game development"
+  ],
+  "author": {
+    "name": "Unity Agent MCP Team",
+    "email": "example@example.com",
+    "url": "https://github.com/nategarelik/game-gateway"
+  }
+}
