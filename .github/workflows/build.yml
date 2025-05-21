@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/src
 
     steps:
     - uses: actions/checkout@v3
@@ -25,7 +27,7 @@ jobs:
     
     - name: Run tests
       run: |
-        python -m pytest -P src tests/
+        python -m pytest tests/
     
     - name: Create Unity package
       run: |
