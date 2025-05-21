@@ -1,6 +1,6 @@
 import os
 from typing import Dict, Any
-from ..client import MCPClient # Assuming MCPClient is in the same package level
+from mcp_server.client import MCPClient # Corrected import path
 
 class UnityToolchainBridge:
     def __init__(self, mcp_server_instance):
