@@ -5,7 +5,32 @@ import shutil
 import subprocess
 import sys
 import json
+import uuid
 from pathlib import Path
+
+def generate_meta_file(file_path: Path):
+    """Generates a basic .meta file for a given file or directory path."""
+    meta_path = file_path.with_suffix(file_path.suffix + '.meta')
+    if not meta_path.exists():
+        guid = uuid.uuid4().hex
+        content = f"""fileFormatVersion: 2
+guid: {guid}
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {{}}
+  userData:
+  assetBundleName:
+  assetBundleVariant:
+""" if file_path.is_dir() else f"""fileFormatVersion: 2
+guid: {guid}
+DefaultImporter:
+  externalObjects: {{}}
+  userData:
+  assetBundleName:
+  assetBundleVariant:
+"""
+        meta_path.write_text(content)
+        print(f"Generated .meta for: {file_path}")
 
 def create_unity_package():
     """Create a Unity package from the unity-package directory"""
@@ -32,15 +57,24 @@ def create_unity_package():
             else:
                 shutil.copy2(item, temp_dir / item.name)
         
+        # Generate .meta files for all relevant assets in the temp directory
+        for root, dirs, files in os.walk(temp_dir):
+            for d in dirs:
+                generate_meta_file(Path(root) / d)
+            for f in files:
+                file_path = Path(root) / f
+                if file_path.suffix in ['.cs', '.asmdef', '.md', '.json']: # Include common asset types
+                    generate_meta_file(file_path)
+        
         # Create the tgz package
         package_name = 'com.unity-agent-mcp.tgz'
         output_path = unity_package_dir / package_name
         
         # Use npm pack to create the package
         result = subprocess.run(
-            ['npm', 'pack'], 
-            cwd=temp_dir, 
-            capture_output=True, 
+            ['npm', 'pack'],
+            cwd=temp_dir,
+            capture_output=True,
             text=True
         )
         
