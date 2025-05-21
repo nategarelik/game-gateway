@@ -32,7 +32,7 @@ jobs:
         python scripts/package_unity_integration.py
     
     - name: Upload Unity package
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: unity-package
         path: unity-package/com.unity-agent-mcp.tgz
