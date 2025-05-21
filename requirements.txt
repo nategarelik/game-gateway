@@ -5,3 +5,4 @@ httpx
 langgraph
 pydantic
 pytest-asyncio
+Flask
