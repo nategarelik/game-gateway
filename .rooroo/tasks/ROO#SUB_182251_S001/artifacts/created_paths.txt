@@ -1,0 +1,7 @@
+src/mcp_server/__init__.py
+src/agents/__init__.py
+src/toolchains/__init__.py
+src/utils/__init__.py
+docs/agents/.gitkeep
+docs/toolchains/.gitkeep
+tests/agents/.gitkeep
