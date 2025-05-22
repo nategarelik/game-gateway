@@ -8,7 +8,7 @@ namespace UnityAgentMCP.Editor
 {
     public class MCPConnectionWindow : EditorWindow
     {
-        private string serverUrl = "http://localhost:5001";
+        private string serverUrl = "http://127.0.0.1:8000/api/v1";
         private string connectionStatus = "Not connected";
         private bool isConnected = false;
 

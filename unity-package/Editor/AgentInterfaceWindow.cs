@@ -115,12 +115,12 @@ namespace UnityAgentMCP.Editor
         {
             switch (selectedAgentIndex)
             {
-                case 0: return "orchestrator";
+                case 0: return "level_architect";
                 case 1: return "code_weaver";
                 case 2: return "documentation_sentinel";
                 case 3: return "pixel_forge";
-                case 4: return "level_architect";
-                default: return "orchestrator";
+                case 4: return "orchestrator";
+                default: return "orchestrator"; // Fallback
             }
         }
     }
