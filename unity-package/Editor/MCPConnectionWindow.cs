@@ -61,23 +61,53 @@ namespace UnityAgentMCP.Editor
                 using (HttpClient client = new HttpClient())
                 {
                     client.Timeout = TimeSpan.FromSeconds(5);
-                    HttpResponseMessage response = await client.GetAsync(serverUrl);
                     
-                    if (response.IsSuccessStatusCode)
+                    // First test if server is reachable
+                    HttpResponseMessage pingResponse = await client.GetAsync(serverUrl.TrimEnd('/') + "/");
+                    
+                    if (!pingResponse.IsSuccessStatusCode)
                     {
+                        string errorContent = await pingResponse.Content.ReadAsStringAsync();
+                        connectionStatus = $"Server error: {pingResponse.StatusCode} - {errorContent}";
+                        isConnected = false;
+                        Repaint();
+                        return;
+                    }
+                    
+                    // Test the API endpoint specifically
+                    HttpResponseMessage apiResponse = await client.GetAsync(serverUrl.TrimEnd('/'));
+                    
+                    if (apiResponse.IsSuccessStatusCode)
+                    {
+                        string content = await apiResponse.Content.ReadAsStringAsync();
                         connectionStatus = "Connected successfully";
                         isConnected = true;
                     }
                     else
                     {
-                        connectionStatus = $"Connection failed: {response.StatusCode}";
+                        string errorContent = await apiResponse.Content.ReadAsStringAsync();
+                        connectionStatus = $"API error: {apiResponse.StatusCode} - {errorContent}";
                         isConnected = false;
                     }
                 }
             }
+            catch (HttpRequestException httpEx)
+            {
+                connectionStatus = $"Network error: {httpEx.Message}";
+                if (httpEx.InnerException != null)
+                {
+                    connectionStatus += $" (Inner: {httpEx.InnerException.Message})";
+                }
+                isConnected = false;
+            }
+            catch (TaskCanceledException)
+            {
+                connectionStatus = "Connection timed out. Check if the MCP server is running.";
+                isConnected = false;
+            }
             catch (Exception ex)
             {
-                connectionStatus = $"Connection error: {ex.Message}";
+                connectionStatus = $"Error: {ex.GetType().Name} - {ex.Message}";
                 isConnected = false;
             }
 
