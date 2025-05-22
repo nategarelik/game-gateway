@@ -1,93 +1,124 @@
-# Unity Agent MCP
+# Unity Agent MCP Documentation
 
-An Autonomous AI Agent Ecosystem for Unity Game Development, focusing on programming, scripting, scene creation, and world mapping.
+Welcome to the Unity Agent MCP documentation. This documentation provides comprehensive information about the Autonomous AI Agent Ecosystem for Unity Game Development.
 
-## Overview
+## Getting Started
 
-This project provides a Model Context Protocol (MCP) server and agent framework for Unity game development. It enables AI-driven game development with specialized agents for:
+- [development_setup](development_setup.md) - Setting up a development environment
+- [unity_integration_guide](unity_integration_guide.md) - Integrating with Unity projects
+- [github_setup](github_setup.md) - Setting up and publishing the project on GitHub
 
-- Level architecture and scene creation
-- Code generation and scripting
-- Documentation management
-- Asset placement and organization
+## Architecture
 
-## Quick Start
+- [architecture_overview](architecture_overview.md) - High-level overview of the system architecture
+- [unity_package_structure](unity_package_structure.md) - Structure and content of the Unity package
 
-### Prerequisites
+## MCP Server
 
-- Python 3.8+
-- Unity 2022.3 LTS or newer
-- Git
+- [mcp_server](mcp_server.md) - Overview of the MCP server
+- [api](mcp_server/api.md) - API documentation
+- [prompt_registry](mcp_server/prompt_registry.md) - Prompt template management
+- [state_management](mcp_server/state_management.md) - State management using LangGraph
 
-### Installation
+## Agents
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/unity-agent-mcp.git
-   cd unity-agent-mcp
-   ```
+- [level_architect](agents/level_architect.md) - Level Architect agent documentation
+- [code_weaver](agents/code_weaver.md) - Code Weaver agent documentation
+- [documentation_sentinel](agents/documentation_sentinel.md) - Documentation Sentinel agent documentation
+- [pixel_forge](agents/pixel_forge_agent.md) - Pixel Forge agent documentation
+- [creating_new_agents](creating_new_agents.md) - Guide to creating new agents
 
-2. Install Python dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Protocols
 
-3. Import the Unity package:
-   - In Unity, go to Window > Package Manager
-   - Click '+' > Add package from disk
-   - Select the `unity-package/com.unity-agent-mcp.tgz` file
+- [advanced_collaboration](protocols/advanced_collaboration.md) - Multi-agent collaboration protocols
+- [emergent_behaviors](protocols/emergent_behaviors.md) - Emergent behavior protocols
 
-### Running the MCP Server
+## Systems
 
-```bash
-python -m src.mcp_server.main
+- [extensibility](systems/extensibility.md) - Extensibility and integration system
+- [knowledge_management](systems/knowledge_management.md) - Knowledge management system
+- [style_enforcement](systems/style_enforcement.md) - Style enforcement system
+
+## Toolchains
+
+- [muse](toolchains/muse.md) - Unity Muse integration
+- [retro_diffusion](toolchains/retro_diffusion.md) - Retro Diffusion integration
+
+## Workflows
+
+- [autonomous_iteration](workflows/autonomous_iteration.md) - Autonomous iteration workflow
+
+## Tests
+
+- [e2e_scenario_01](tests/e2e_scenario_01.md) - End-to-end test scenario
+
+## Contributing
+
+- [CONTRIBUTING](/CONTRIBUTING.md) - Guidelines for contributing to the project
+
+## Directory Structure
+
+```
+docs/
+├── README.md                        # This file
+├── architecture_overview.md         # High-level architecture overview
+├── creating_new_agents.md           # Guide to creating new agents
+├── development_setup.md             # Development environment setup
+├── github_setup.md                  # GitHub repository setup
+├── unity_integration_guide.md       # Unity integration guide
+├── unity_package_structure.md       # Unity package structure
+├── agents/
+│   ├── code_weaver.md               # Code Weaver agent documentation
+│   ├── documentation_sentinel.md    # Documentation Sentinel agent documentation
+│   ├── level_architect.md           # Level Architect agent documentation
+│   └── pixel_forge_agent.md         # Pixel Forge agent documentation
+├── mcp_server/
+│   ├── api.md                       # API documentation
+│   ├── prompt_registry.md           # Prompt registry documentation
+│   └── state_management.md          # State management documentation
+├── protocols/
+│   ├── advanced_collaboration.md    # Advanced collaboration protocols
+│   └── emergent_behaviors.md        # Emergent behavior protocols
+├── systems/
+│   ├── extensibility.md             # Extensibility system documentation
+│   ├── knowledge_management.md      # Knowledge management system documentation
+│   └── style_enforcement.md         # Style enforcement system documentation
+├── tests/
+│   └── e2e_scenario_01.md           # End-to-end test scenario
+├── toolchains/
+│   ├── muse.md                      # Muse toolchain documentation
+│   └── retro_diffusion.md           # Retro Diffusion toolchain documentation
+└── workflows/
+    └── autonomous_iteration.md      # Autonomous iteration workflow documentation
 ```
 
-### Configuring Unity Integration
+## Document Conventions
 
-1. In Unity, open Window > Unity Agent MCP > Settings
-2. Enter your MCP server details (default: http://localhost:5001)
-3. Click "Test Connection"
+Throughout the documentation, we use the following conventions:
 
-## Features
+- Code blocks are used for code examples, command-line instructions, and file contents
+- Inline code formatting is used for code elements, file names, and paths
+- Blockquotes are used for important notes and warnings
+- Headings are used to organize content hierarchically
+- Lists are used for sequential steps, options, and collections of items
 
-- **Level Architect Agent**: Creates and modifies Unity scenes based on descriptions
-- **Code Weaver Agent**: Generates and implements C# scripts for game logic
-- **Documentation Sentinel**: Manages documentation for code and assets
-- **Pixel Forge Agent**: Places and organizes assets in scenes
+## Updating Documentation
 
-## Project Structure
+When updating the documentation, please follow these guidelines:
 
-- `src/`: Core source code
-- `docs/`: Documentation
-- `tests/`: Test files
-- `unity-package/`: Unity integration package
-- `scripts/`: Utility scripts
+1. Use clear, concise language
+2. Include examples where appropriate
+3. Keep documentation up to date with code changes
+4. Use proper Markdown formatting
+5. Add new documents to this index
 
-## Publishing to GitHub
+## Getting Help
 
-To make this project available from any device:
+If you need help with the Unity Agent MCP system, you can:
 
-1. Create a new GitHub repository:
-   - Go to https://github.com/new
-   - Name it "unity-agent-mcp" (or your preferred name)
-   - Set it to Public or Private as desired
-   - Do not initialize with README, .gitignore, or license
+- Check the documentation for relevant information
+- Look for examples in the `scripts` directory
+- Create an issue on GitHub for bugs or feature requests
+- Reach out to the project maintainers
 
-2. Push the local repository to GitHub:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/unity-agent-mcp.git
-   git push -u origin main
-   ```
-
-3. Set up GitHub Actions for CI/CD:
-   - The `.github/workflows/build.yml` file is already configured
-   - It will automatically run tests and build the Unity package
-
-## License
-
-MIT
+Thank you for using Unity Agent MCP!
