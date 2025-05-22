@@ -13,3 +13,5 @@ env/
 generated_assets/
 
 .roomodes
+
+unity-package/com.game-gateway.tgz
