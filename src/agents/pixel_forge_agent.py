@@ -23,111 +23,84 @@ class PixelForgeAgent(BaseAgent):
     async def process_task(self, task_details: dict) -> dict:
         """
         Process an asset generation or placement task.
-        Expected task_details format:
-        {
-            "task_id": "some_uuid",
-            "type": "generate_asset" | "place_asset",
-            "asset_type": "image" | "texture" | "model_placeholder", // For generate_asset
-            "prompt": "A detailed description of the asset.", // For generate_asset
-            "asset_name": "Cube", // For place_asset
-            "position": {"x": 0, "y": 0, "z": 0}, // For place_asset
-            "rotation": {"x": 0, "y": 0, "z": 0}, // Optional for place_asset
-            "scale": {"x": 1, "y": 1, "z": 1} // Optional for place_asset
-        }
         """
         logger.info(f"PixelForgeAgent ({self.agent_id}) received task: {task_details}")
         task_id = task_details.get("task_id")
-        task_type = task_details.get("type")
-        
+        task_type = task_details.get("task_type") # Use task_type for LLM simulation
+
         await self.post_event_to_mcp(
             event_type="pixel_forge_progress",
             event_data={"task_id": task_id, "status": "started", "task_type": task_type}
         )
 
-        if task_type == "generate_asset":
-            asset_type = task_details.get("asset_type")
-            prompt = task_details.get("prompt")
-
-            if not all([task_id, asset_type, prompt]):
-                error_msg = "Missing required fields in task_details (task_id, asset_type, prompt) for generate_asset task."
-                logger.error(f"PixelForgeAgent ({self.agent_id}) error: {error_msg}")
-                await self.post_event_to_mcp(
-                    event_type="agent_task_error",
-                    event_data={"task_id": task_id, "error": error_msg, "details": task_details}
-                )
-                return {"status": "error", "task_id": task_id, "message": error_msg}
-
-            # Placeholder for asset generation logic
-            # In a real scenario, this would involve:
-            # 1. Interpreting the prompt.
-            # 2. Applying style guidelines.
-            # 3. Interacting with toolchains (Retro Diffusion for 2D, Muse for 3D concepts/placeholders).
-            # 4. Saving the asset to a specified path or returning data.
-
-            logger.info(f"PixelForgeAgent ({self.agent_id}): Simulating asset generation for '{prompt}' ({asset_type})...")
-            await asyncio.sleep(2) # Simulate work
-
-            # Placeholder asset data
-            generated_asset_info = {
-                "asset_id": f"asset_{task_id}_{asset_type}",
-                "type": asset_type,
-                "description": f"Generated {asset_type} based on prompt: {prompt}",
-                "path": f"generated_assets/{self.agent_id}/{asset_type}_{task_id}.png" # Placeholder path
-            }
-            logger.info(f"PixelForgeAgent ({self.agent_id}): Asset generation complete. Info: {generated_asset_info}")
-
+        try:
             await self.post_event_to_mcp(
-                event_type="agent_task_completed",
-                event_data={
-                    "task_id": task_id,
-                    "agent_id": self.agent_id,
-                    "result": generated_asset_info,
-                    "message": f"Asset '{generated_asset_info['asset_id']}' generated successfully."
-                }
+                event_type="pixel_forge_progress",
+                event_data={"task_id": task_id, "status": "simulating_llm", "message": "Simulating LLM response."}
             )
-            return {"status": "completed", "task_id": task_id, "result": generated_asset_info}
+            llm_response = await self._resolve_prompt_and_simulate_llm(task_type, task_details)
 
-        elif task_type == "place_asset":
-            asset_name = task_details.get("asset_name")
-            position = task_details.get("position")
-            rotation = task_details.get("rotation", {"x": 0, "y": 0, "z": 0})
-            scale = task_details.get("scale", {"x": 1, "y": 1, "z": 1})
+            if llm_response.get("error"):
+                logger.error(f"Task {task_id}: LLM simulation failed. Error: {llm_response.get('error')}")
+                return {"status": "failure", "message": llm_response.get('error'), "output": None}
 
-            if not all([task_id, asset_name, position]):
-                error_msg = "Missing required fields in task_details (task_id, asset_name, position) for place_asset task."
-                logger.error(f"PixelForgeAgent ({self.agent_id}) error: {error_msg}")
-                await self.post_event_to_mcp(
-                    event_type="agent_task_error",
-                    event_data={"task_id": task_id, "error": error_msg, "details": task_details}
-                )
-                return {"status": "error", "task_id": task_id, "message": error_msg}
+            action = llm_response.get("action")
+            parameters = llm_response.get("parameters", {})
             
-            result = await self.place_asset_in_unity(asset_name, position, rotation, scale)
-            if result.get("status") == "success":
-                await self.post_event_to_mcp(
-                    event_type="agent_task_completed",
-                    event_data={
-                        "task_id": task_id,
-                        "agent_id": self.agent_id,
-                        "result": result,
-                        "message": f"Asset '{asset_name}' placed successfully."
-                    }
-                )
-                return {"status": "completed", "task_id": task_id, "result": result}
+            tool_execution_result = None
+
+            if action == "generate_image":
+                prompt = parameters.get("description")
+                style_guidelines = parameters.get("image_style") # Re-using for style
+                if not prompt:
+                    error_msg = "Missing 'description' from LLM response for image generation."
+                    logger.error(f"Task {task_id}: {error_msg}")
+                    tool_execution_result = {"status": "error", "message": error_msg}
+                else:
+                    await self.post_event_to_mcp(
+                        event_type="pixel_forge_progress",
+                        event_data={"task_id": task_id, "status": "generating_image", "message": "Calling generate_image."}
+                    )
+                    tool_execution_result = await self.generate_image(prompt, {"style": style_guidelines})
+            elif action == "manipulate_scene": # For placing assets
+                asset_name = parameters.get("target_object")
+                position = parameters.get("position")
+                rotation = parameters.get("rotation", {"x": 0, "y": 0, "z": 0})
+                scale = parameters.get("scale", {"x": 1, "y": 1, "z": 1})
+
+                if not all([asset_name, position]):
+                    error_msg = "Missing 'target_object' or 'position' from LLM response for asset placement."
+                    logger.error(f"Task {task_id}: {error_msg}")
+                    tool_execution_result = {"status": "error", "message": error_msg}
+                else:
+                    await self.post_event_to_mcp(
+                        event_type="pixel_forge_progress",
+                        event_data={"task_id": task_id, "status": "placing_asset", "message": "Calling place_asset_in_unity."}
+                    )
+                    tool_execution_result = await self.place_asset_in_unity(asset_name, position, rotation, scale)
+            elif action == "log_task": # Default mock action
+                logger.info(f"Task {task_id}: LLM suggested logging task: {parameters.get('message')}")
+                tool_execution_result = {"status": "success", "message": "Task logged."}
             else:
-                await self.post_event_to_mcp(
-                    event_type="agent_task_error",
-                    event_data={"task_id": task_id, "error": result.get("message"), "details": task_details}
-                )
-                return {"status": "error", "task_id": task_id, "message": result.get("message")}
-        else:
-            error_msg = f"Unsupported task type: {task_type}"
-            logger.error(f"PixelForgeAgent ({self.agent_id}) error: {error_msg}")
+                logger.warning(f"Task {task_id}: Unhandled LLM action: {action}. Parameters: {parameters}")
+                tool_execution_result = {"status": "unhandled_action", "message": f"LLM suggested unhandled action: {action}"}
+
+            final_status = "completed_successfully" if tool_execution_result and tool_execution_result.get("status") == "success" else "failed"
+            final_message = tool_execution_result.get("message", "No specific message from tool execution.") if tool_execution_result else "No tool execution performed."
+
             await self.post_event_to_mcp(
-                event_type="agent_task_error",
-                event_data={"task_id": task_id, "error": error_msg, "details": task_details}
+                event_type="pixel_forge_complete",
+                event_data={"task_id": task_id, "status": final_status, "output": tool_execution_result}
             )
-            return {"status": "error", "task_id": task_id, "message": error_msg}
+            return {"status": final_status, "message": final_message, "output": tool_execution_result}
+
+        except Exception as e:
+            logger.error(f"Error processing task {task_id} in PixelForgeAgent: {e}", exc_info=True)
+            await self.post_event_to_mcp(
+                event_type="pixel_forge_error",
+                event_data={"task_id": task_id, "status": "failed", "error": str(e)}
+            )
+            return {"status": "failure", "message": f"Error processing task: {str(e)}", "output": None}
 
     async def place_asset_in_unity(self, asset_name: str, position: dict, rotation: dict, scale: dict) -> dict:
         """
@@ -180,8 +153,8 @@ class PixelForgeAgent(BaseAgent):
         else:
             logger.error(f"Agent {self.agent_id} registration failed. Check MCP server logs and agent logs.")
 
+# Example Usage (requires a running MCP server or mock)
 if __name__ == '__main__':
-    # Example Usage (requires a running MCP server or mock)
     async def main():
         mcp_url = "http://localhost:8000/mcp" # Example MCP URL
         agent = PixelForgeAgent(agent_id="pixel_forge_001", mcp_server_url=mcp_url)
@@ -192,8 +165,8 @@ if __name__ == '__main__':
         # Example task: Place an asset
         example_place_task = {
             "task_id": "pf_place_task_123",
-            "type": "place_asset",
-            "asset_name": "Prefab_Tree_01",
+            "task_type": "manipulate_scene", # Changed to match LLM output action
+            "target_object": "Prefab_Tree_01", # Changed to match LLM output parameter
             "position": {"x": 10, "y": 0, "z": 5},
             "rotation": {"x": 0, "y": 45, "z": 0},
             "scale": {"x": 2, "y": 2, "z": 2}
@@ -204,10 +177,9 @@ if __name__ == '__main__':
         # Example task: Generate an asset (de-prioritized but still functional)
         example_generate_task = {
             "task_id": "pf_generate_task_456",
-            "type": "generate_asset",
-            "asset_type": "image",
-            "prompt": "A stylized rock texture",
-            "style_guidelines": {"resolution": "512x512"},
+            "task_type": "image_generation", # Changed to match LLM output action
+            "description": "A stylized rock texture", # Changed to match LLM output parameter
+            "image_style": "512x512", # Changed to match LLM output parameter
             "output_path_suggestion": "project_x/assets/textures/"
         }
         result_generate = await agent.process_task(example_generate_task)

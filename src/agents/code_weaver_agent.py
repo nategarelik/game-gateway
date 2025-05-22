@@ -43,21 +43,18 @@ class CodeWeaverAgent(BaseAgent):
     async def process_task(self, task_details: Dict[str, Any]) -> Dict[str, Any]:
         """
         Processes a task related to script generation and implementation.
-
-        Expected task_details:
-        {
-            "task_id": "unique_task_id",
-            "task_type": "generate_script" or "modify_script",
-            "script_name": "NameOfScript",
-            "script_content": "string_containing_csharp_code",
-            "script_path": "Optional/Path/To/Script.cs"
-        }
         """
         task_id = task_details.get("task_id", "unknown_task")
-        task_type = task_details.get("task_type")
-        script_name = task_details.get("script_name")
-        script_content = task_details.get("script_content")
-        script_path = task_details.get("script_path")
+        task_type = task_details.get("task_type") # This is the task_type for the LLM simulation
+
+        if not task_type:
+            error_msg = f"'task_type' missing in task_details for task {task_id}."
+            logger.error(error_msg)
+            await self.post_event_to_mcp(
+                event_type="code_weaver_error",
+                event_data={"task_id": task_id, "status": "failed", "error": error_msg}
+            )
+            return {"status": "failure", "message": error_msg, "output": None}
 
         logger.info(f"CodeWeaverAgent ({self.agent_id}) processing task ID: {task_id}, Type: {task_type}")
         await self.post_event_to_mcp(
@@ -65,37 +62,60 @@ class CodeWeaverAgent(BaseAgent):
             event_data={"task_id": task_id, "status": "started", "message": f"Processing task type: {task_type}"}
         )
 
-        if task_type == "generate_script" or task_type == "modify_script":
-            if not script_name or not script_content:
-                error_msg = "Missing 'script_name' or 'script_content' for script generation/modification task."
-                logger.error(error_msg)
-                await self.post_event_to_mcp(
-                    event_type="code_weaver_error",
-                    event_data={"task_id": task_id, "status": "failed", "error": error_msg}
-                )
-                return {"status": "failure", "message": error_msg}
+        try:
+            await self.post_event_to_mcp(
+                event_type="code_weaver_progress",
+                event_data={"task_id": task_id, "status": "simulating_llm", "message": "Simulating LLM response."}
+            )
+            llm_response = await self._resolve_prompt_and_simulate_llm(task_type, task_details)
+
+            if llm_response.get("error"):
+                logger.error(f"Task {task_id}: LLM simulation failed. Error: {llm_response.get('error')}")
+                return {"status": "failure", "message": llm_response.get('error'), "output": None}
+
+            action = llm_response.get("action")
+            parameters = llm_response.get("parameters", {})
             
-            result = await self.generate_and_implement_script(script_name, script_content, script_path)
-            if result.get("status") == "success":
-                await self.post_event_to_mcp(
-                    event_type="code_weaver_complete",
-                    event_data={"task_id": task_id, "status": "completed_successfully", "result": result}
-                )
-                return {"status": "success", "message": f"Script '{script_name}' processed successfully.", "output": result}
+            tool_execution_result = None
+
+            if action == "generate_script":
+                script_name = parameters.get("script_name")
+                script_content = parameters.get("script_content")
+                script_path = parameters.get("script_path") # Optional
+                
+                if not script_name or not script_content:
+                    error_msg = "Missing 'script_name' or 'script_content' from LLM response for script generation."
+                    logger.error(f"Task {task_id}: {error_msg}")
+                    tool_execution_result = {"status": "error", "message": error_msg}
+                else:
+                    await self.post_event_to_mcp(
+                        event_type="code_weaver_progress",
+                        event_data={"task_id": task_id, "status": "implementing_script", "message": "Calling Unity Bridge to implement script."}
+                    )
+                    tool_execution_result = await self.generate_and_implement_script(script_name, script_content, script_path)
+            elif action == "log_task": # Default mock action
+                logger.info(f"Task {task_id}: LLM suggested logging task: {parameters.get('message')}")
+                tool_execution_result = {"status": "success", "message": "Task logged."}
             else:
-                await self.post_event_to_mcp(
-                    event_type="code_weaver_error",
-                    event_data={"task_id": task_id, "status": "failed", "error": result.get("message")}
-                )
-                return {"status": "failure", "message": result.get("message")}
-        else:
-            error_msg = f"Unsupported task type: {task_type}"
-            logger.error(error_msg)
+                logger.warning(f"Task {task_id}: Unhandled LLM action: {action}. Parameters: {parameters}")
+                tool_execution_result = {"status": "unhandled_action", "message": f"LLM suggested unhandled action: {action}"}
+
+            final_status = "completed_successfully" if tool_execution_result and tool_execution_result.get("status") == "success" else "failed"
+            final_message = tool_execution_result.get("message", "No specific message from tool execution.") if tool_execution_result else "No tool execution performed."
+
+            await self.post_event_to_mcp(
+                event_type="code_weaver_complete",
+                event_data={"task_id": task_id, "status": final_status, "output": tool_execution_result}
+            )
+            return {"status": final_status, "message": final_message, "output": tool_execution_result}
+
+        except Exception as e:
+            logger.error(f"Error processing task {task_id} in CodeWeaverAgent: {e}", exc_info=True)
             await self.post_event_to_mcp(
                 event_type="code_weaver_error",
-                event_data={"task_id": task_id, "status": "failed", "error": error_msg}
+                event_data={"task_id": task_id, "status": "failed", "error": str(e)}
             )
-            return {"status": "failure", "message": error_msg}
+            return {"status": "failure", "message": f"Error processing task: {str(e)}", "output": None}
 
     async def start_and_register(self):
         """

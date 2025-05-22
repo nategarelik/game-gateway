@@ -3,6 +3,10 @@ uvicorn[standard]
 pytest
 httpx
 langgraph
+langchain_community
+langchain_openai
 pydantic
 pytest-asyncio
 Flask
+python-dotenv
+requests

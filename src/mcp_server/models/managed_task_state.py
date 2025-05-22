@@ -9,6 +9,8 @@ class ManagedTaskState(BaseModel):
     task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     current_step: str = "initial"
     status: str = "pending"  # e.g., "pending", "in_progress", "waiting_for_agent", "completed", "failed"
+    target_agent_id: Optional[str] = None # Stores the primary agent for this task
+    initial_parameters: Optional[Dict[str, Any]] = None # Stores the initial parameters for the task
     history: List[Dict[str, Any]] = Field(default_factory=list)  # List of events or steps taken
     agent_responses: Dict[str, Any] = Field(default_factory=dict) # Stores responses from agents
     error_info: Optional[Dict[str, Any]] = None # Details if an error occurs

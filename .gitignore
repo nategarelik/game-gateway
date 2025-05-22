@@ -1,34 +1,3 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-*.egg-info/
-.installed.cfg
-*.egg
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.nox/
-.hypothesis/
-.pytest_cache/
-venv/
-ENV/
-
 # Unity
 /[Ll]ibrary/
 /[Tt]emp/
@@ -71,25 +40,44 @@ ENV/
 *.publishsettings
 orleans.codegen.cs
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+# Visual Studio 2015+
 .vs/
-*.sublime-workspace
-*.sublime-project
+*.VC.db
+*.VC.opendb
 
-# OS
+# Visual Studio Code
+.vscode/
+
+# Rider
+.idea/
+*.csproj.DotSettings
+*.sln.DotSettings
+
+# macOS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
 .Trashes
-ehthumbs.db
+.Spotlight-V100
+._*
+
+# Windows
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Build results
+[Bb]uild/
+[Dd]ist/
+[Oo]ut/
+
+# Package Manager
+.npm/
+node_modules/
+
+# Logs
+*.log
+Logs/
 
 # Project specific
 generated_assets/
 temp_package/
-.rooroo/
+.roomodes/

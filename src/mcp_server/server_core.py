@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+
+load_dotenv() # Load environment variables from .env file at the very beginning
 print("[DEBUG] mcp_server_core.py execution started...")
 import sys
 import os
@@ -6,13 +9,13 @@ import random # Added for AutonomousIterationWorkflow
 import time # Added for AutonomousIterationWorkflow
 from typing import List, Dict, Any, Optional, Callable # Added Optional, Callable for protocols
 import json # For direct JSON manipulation if needed
+import logging # Added for better logging
 
-# --- Flask Import ---
-try:
-    from flask import Flask, request, jsonify
-except ImportError:
-    print("[ERROR] Flask library not found. Please install it: pip install Flask")
-    sys.exit(1)
+from fastapi import FastAPI
+from src.mcp_server.api.routes import router as api_router
+from src.mcp_server.core.state_manager import StateManager
+from src.mcp_server.core.prompt_registry import PromptRegistry
+from src.mcp_server.models.api_models import AgentInfo
 
 # --- Path Setup (REMOVED as per relocation to src/mcp_server) ---
 # The old sys.path manipulation is no longer suitable here.
@@ -36,160 +39,67 @@ _agent_classes = {}
 _toolchain_classes = {}
 
 try:
-    from level_architect_agent import LevelArchitectAgent
+    from src.agents.level_architect_agent import LevelArchitectAgent
     _agent_classes["level_architect"] = LevelArchitectAgent
     print("[INFO] Successfully imported LevelArchitectAgent.")
 except ImportError as e:
     print(f"[Warning] Failed to import LevelArchitectAgent: {e}. This agent will not be available.")
 
 try:
-    from code_weaver_agent import CodeWeaverAgent
+    from src.agents.code_weaver_agent import CodeWeaverAgent
     _agent_classes["code_weaver"] = CodeWeaverAgent
     print("[INFO] Successfully imported CodeWeaverAgent.")
 except ImportError as e:
     print(f"[Warning] Failed to import CodeWeaverAgent: {e}. This agent will not be available.")
 
 try:
-    from pixel_forge_agent import PixelForgeAgent
+    from src.agents.pixel_forge_agent import PixelForgeAgent
     _agent_classes["pixel_forge"] = PixelForgeAgent
     print("[INFO] Successfully imported PixelForgeAgent.")
 except ImportError as e:
     print(f"[Warning] Failed to import PixelForgeAgent: {e}. This agent will not be available.")
 
 try:
-    from documentation_sentinel_agent import DocumentationSentinelAgent
+    from src.agents.documentation_sentinel_agent import DocumentationSentinelAgent
     _agent_classes["documentation_sentinel"] = DocumentationSentinelAgent
     print("[INFO] Successfully imported DocumentationSentinelAgent.")
 except ImportError as e:
     print(f"[Warning] Failed to import DocumentationSentinelAgent: {e}. This agent will not be available.")
 
-try:
-    from muse_bridge import MuseToolchainBridge
-    _toolchain_classes["muse_bridge"] = MuseToolchainBridge
-    print("[INFO] Successfully imported MuseToolchainBridge.")
-except ImportError as e:
-    print(f"[Warning] Failed to import MuseToolchainBridge: {e}. Muse toolchain will not be available.")
+# try:
+#     from src.toolchains.muse_bridge import MuseToolchainBridge
+#     _toolchain_classes["muse_bridge"] = MuseToolchainBridge
+#     print("[INFO] Successfully imported MuseToolchainBridge.")
+# except ImportError as e:
+#     print(f"[Warning] Failed to import MuseToolchainBridge: {e}. Muse toolchain will not be available.")
+
+# try:
+#     from src.toolchains.retro_diffusion_bridge import RetroDiffusionToolchainBridge
+#     _toolchain_classes["retro_diffusion_bridge"] = RetroDiffusionToolchainBridge
+#     print("[INFO] Successfully imported RetroDiffusionToolchainBridge.")
+# except ImportError as e:
+#     print(f"[Warning] Failed to import RetroDiffusionToolchainBridge: {e}. Retro Diffusion toolchain will not be available.")
 
 try:
-    from retro_diffusion_bridge import RetroDiffusionToolchainBridge
-    _toolchain_classes["retro_diffusion_bridge"] = RetroDiffusionToolchainBridge
-    print("[INFO] Successfully imported RetroDiffusionToolchainBridge.")
-except ImportError as e:
-    print(f"[Warning] Failed to import RetroDiffusionToolchainBridge: {e}. Retro Diffusion toolchain will not be available.")
-
-try:
-    from unity_bridge import UnityToolchainBridge
+    from src.toolchains.unity_bridge import UnityToolchainBridge # Corrected to absolute import
     _toolchain_classes["unity_bridge"] = UnityToolchainBridge
     print("[INFO] Successfully imported UnityToolchainBridge.")
 except ImportError as e:
     print(f"[Warning] Failed to import UnityToolchainBridge: {e}. Unity toolchain will not be available.")
 
 # Import KnowledgeManagementSystem
-from systems.knowledge_management_system import KnowledgeManagementSystem
+from src.systems.knowledge_management_system import KnowledgeManagementSystem
 # Import AutonomousIterationWorkflow
-from workflows.autonomous_iteration import AutonomousIterationWorkflow
+from src.workflows.autonomous_iteration import AutonomousIterationWorkflow
 # Import Emergent Behavior Protocols
-from protocols.emergent_behavior_protocols import CreativeConflictResolver, DynamicToolComposer, Tool, DesignProposal
+from src.protocols.emergent_behavior_protocols import CreativeConflictResolver, DynamicToolComposer, Tool, DesignProposal
 # Import Advanced Collaboration Protocols
-from protocols.advanced_collaboration_protocols import CollaborationManager, AgentEventBus, AgentProfile, TaskAssistanceRequest, AgentEvent
+from src.protocols.advanced_collaboration_protocols import CollaborationManager, AgentEventBus, AgentProfile, TaskAssistanceRequest, AgentEvent
 # Import Extensibility and Integration components
-from systems.extensibility_integration import ToolRegistry, AbstractToolInterface, MockImageResizerTool
+from src.systems.extensibility_integration import ToolRegistry, AbstractToolInterface, MockImageResizerTool
 
+logger = logging.getLogger(__name__) # Initialize logger for this module
 
-# --- Existing GameDevState, Agent, PromptRegistry, StateGraph ---
-class GameDevState:
-    project_metadata: Dict[str, Any]
-    assets: Dict[str, Any]
-    current_tasks: List[str]
-    completed_tasks: List[str]
-    agent_states: Dict[str, Any]
-
-    def __init__(self, project_metadata: Dict[str, Any] = None, assets: Dict[str, Any] = None,
-                 current_tasks: List[str] = None, completed_tasks: List[str] = None,
-                 agent_states: Dict[str, Any] = None):
-        self.project_metadata = project_metadata if project_metadata is not None else {}
-        self.assets = assets if assets is not None else {}
-        self.current_tasks = current_tasks if current_tasks is not None else []
-        self.completed_tasks = completed_tasks if completed_tasks is not None else []
-        self.agent_states = agent_states if agent_states is not None else {}
-
-class Agent:
-    def __init__(self, role: str, prompt_template: List[str]):
-        self.role = role
-        self.prompt_template = prompt_template
-
-    def execute(self, state: GameDevState) -> GameDevState:
-        print(f"Agent {self.role} is executing with current state.")
-        return state
-
-    # Expected method for direct API calls
-    def handle_direct_request(self, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        # This method should be implemented by concrete agent classes.
-        # It processes 'parameters' and returns a result dictionary.
-        print(f"[Warning] Agent {self.role} handle_direct_request not implemented. Returning parameters.")
-        return {"status": "default_handler", "received_parameters": parameters}
-
-
-class PromptRegistry:
-    def __init__(self):
-        self.templates: Dict[str, List[str]] = {}
-
-    def add_template(self, role: str, template: List[str]):
-        self.templates[role] = template
-
-    def get_template(self, role: str) -> List[str] | None:
-        return self.templates.get(role)
-
-    def resolve_prompt(self, template: List[str], variables: Dict[str, Any]) -> str:
-        resolved_lines = []
-        for line in template:
-            placeholders = re.findall(r'\{\{(\w+)\}\}', line)
-            if not placeholders:
-                resolved_lines.append(line)
-                continue
-            if all(var_name in variables for var_name in placeholders):
-                resolved_line = line
-                for var_name in placeholders:
-                    resolved_line = resolved_line.replace(f'{{{{{var_name}}}}}', str(variables[var_name]))
-                resolved_lines.append(resolved_line)
-        return "\n".join(resolved_lines)
-
-class StateGraph:
-    def __init__(self, state_schema):
-        self.nodes = {}
-        self.edges = {}
-        self.state_schema = state_schema
-        print(f"StateGraph initialized with schema: {state_schema.__name__}")
-
-    def add_node(self, name: str, action):
-        self.nodes[name] = action
-        print(f"Node '{name}' added to StateGraph.")
-
-    def add_edge(self, start_node: str, end_node: str, condition=None):
-        if start_node not in self.edges:
-            self.edges[start_node] = []
-        self.edges[start_node].append({"to": end_node, "condition": condition})
-        print(f"Edge from '{start_node}' to '{end_node}' added.")
-
-    def run(self, initial_state: GameDevState, start_node_name: str):
-        print(f"StateGraph run initiated with initial state at node '{start_node_name}'.")
-        current_node_name = start_node_name
-        current_state = initial_state
-        while current_node_name in self.nodes:
-            action = self.nodes[current_node_name]
-            print(f"Executing node: {current_node_name}")
-            current_state = action(current_state)
-            if current_node_name in self.edges and self.edges[current_node_name]:
-                next_edge = self.edges[current_node_name][0]
-                print(f"Transitioning from {current_node_name} to {next_edge['to']}")
-                current_node_name = next_edge['to']
-            else:
-                print(f"No outgoing edge from {current_node_name} or node not found. Workflow ends.")
-                break
-        print("StateGraph run finished.")
-        return current_state
-
-# --- MCPServer Class (Modified) ---
 # MCPClient class has been moved to mcp_client.py
 class MCPServer:
     """
@@ -206,9 +116,6 @@ class MCPServer:
         Sets up the workflow engine, prompt registry, and instantiates available
         toolchain bridges and agents.
         """
-        self.workflow = StateGraph(GameDevState)
-        self.prompt_engine = PromptRegistry()
-        self.agents: Dict[str, Agent] = {} # Stores instantiated agents
         self.mcp_server_url = os.environ.get("MCP_SERVER_URL", "http://127.0.0.1:5000") # Added for agent instantiation
         self.knowledge_management_system = KnowledgeManagementSystem(mcp_server_url=self.mcp_server_url) # Instantiate KMS
         self.autonomous_iteration_workflow = AutonomousIterationWorkflow(mcp_task_dispatcher=self._dispatch_mcp_task) # Instantiate AIW
@@ -219,12 +126,23 @@ class MCPServer:
         # Prepare tools for DynamicToolComposer
         available_tools = []
         # Add toolchain bridges as tools
-        if self.muse_bridge:
-            available_tools.append(Tool("muse_toolchain", "Muse Toolchain", ["conceptual_generation", "text_generation"], {}))
-        if self.retro_diffusion_bridge:
-            available_tools.append(Tool("retro_diffusion_toolchain", "Retro Diffusion Toolchain", ["image_generation", "texture_generation"], {}))
-        if self.unity_bridge:
-            available_tools.append(Tool("unity_toolchain", "Unity Toolchain", ["scene_manipulation", "script_execution", "asset_placement"], {}))
+        # if hasattr(self, 'muse_bridge') and self.muse_bridge:
+        #     available_tools.append(Tool("muse_toolchain", "Muse Toolchain", ["conceptual_generation", "text_generation"], {}))
+        # if hasattr(self, 'retro_diffusion_bridge') and self.retro_diffusion_bridge:
+        #     available_tools.append(Tool("retro_diffusion_toolchain", "Retro Diffusion Toolchain", ["image_generation", "texture_generation"], {}))
+        
+        # This is where self.unity_bridge would be initialized if MCPServer instance was used by FastAPI app state
+        self.unity_bridge = None # Initialize to None
+        if "unity_bridge" in _toolchain_classes:
+            try:
+                self.unity_bridge = _toolchain_classes["unity_bridge"](self) # Pass MCPServer instance
+                print("[INFO] MCPServer.__init__: UnityToolchainBridge initialized.")
+                available_tools.append(Tool("unity_toolchain", "Unity Toolchain", ["scene_manipulation", "script_execution", "asset_placement"], {}))
+            except Exception as e:
+                 print(f"[ERROR] MCPServer.__init__: Failed to initialize UnityToolchainBridge: {e}")
+        else:
+            print("[Warning] MCPServer.__init__: UnityToolchainBridge class not found in _toolchain_classes.")
+
         
         # Add conceptual tools from agents (this would be more dynamic in a real system)
         available_tools.append(Tool("level_architect_agent_tool", "Level Architect Agent", ["level_design", "procedural_generation_guidance"], {}))
@@ -239,53 +157,22 @@ class MCPServer:
         self.tool_registry.register_tool(MockImageResizerTool())
         logger.info("Example external tools registered with ToolRegistry.")
 
-        # Instantiate Toolchain Bridges
-        if "muse_bridge" in _toolchain_classes:
-            self.muse_bridge = _toolchain_classes["muse_bridge"](self)
-            print("[INFO] MuseToolchainBridge initialized.")
-        else:
-            self.muse_bridge = None
-            print("[Warning] MuseToolchainBridge not available.")
+        # Instantiate Toolchain Bridges - Unity bridge is now handled above
+        # if "muse_bridge" in _toolchain_classes:
+        #     self.muse_bridge = _toolchain_classes["muse_bridge"](self)
+        #     print("[INFO] MuseToolchainBridge initialized.")
+        # else:
+        #     self.muse_bridge = None
+        #     print("[Warning] MuseToolchainBridge not available.")
 
-        if "retro_diffusion_bridge" in _toolchain_classes:
-            self.retro_diffusion_bridge = _toolchain_classes["retro_diffusion_bridge"](self)
-            print("[INFO] RetroDiffusionToolchainBridge initialized.")
-        else:
-            self.retro_diffusion_bridge = None
-            print("[Warning] RetroDiffusionToolchainBridge not available.")
-
-        if "unity_bridge" in _toolchain_classes:
-            self.unity_bridge = _toolchain_classes["unity_bridge"](self)
-            print("[INFO] UnityToolchainBridge initialized.")
-        else:
-            self.unity_bridge = None
-            print("[Warning] UnityToolchainBridge not available.")
+        # if "retro_diffusion_bridge" in _toolchain_classes:
+        #     self.retro_diffusion_bridge = _toolchain_classes["retro_diffusion_bridge"](self)
+        #     print("[INFO] RetroDiffusionToolchainBridge initialized.")
+        # else:
+        #     self.retro_diffusion_bridge = None
+        #     print("[Warning] RetroDiffusionToolchainBridge not available.")
         
         print("MCPServer core initialized.")
-
-        # Instantiate Agents
-        for agent_id, agent_class_constructor in _agent_classes.items():
-            try:
-                # Pass the mcp_server_url and unity_bridge to agents that need it
-                if agent_id in ["level_architect", "code_weaver", "pixel_forge"]:
-                    self.agents[agent_id] = agent_class_constructor(
-                        agent_id=agent_id,
-                        mcp_server_url=self.mcp_server_url,
-                        unity_bridge=self.unity_bridge # Pass the unity_bridge instance
-                    )
-                else:
-                    # For other agents, assume the existing constructor signature
-                    self.agents[agent_id] = agent_class_constructor(role=agent_id, prompt_template=[])
-                print(f"[INFO] Agent '{agent_id}' instantiated.")
-            except Exception as e:
-                print(f"[ERROR] Failed to instantiate agent '{agent_id}': {e}")
-        
-        print("MCPServer agent instantiation complete.")
-
-        # Register agents with CollaborationManager
-        for agent_id, agent_instance in self.agents.items():
-            self.collaboration_manager.register_agent(agent_id, agent_instance.capabilities)
-        logger.info("Agents registered with CollaborationManager.")
 
         # Configure Knowledge Management System sources
         self.knowledge_management_system.add_document_source(
@@ -311,84 +198,6 @@ class MCPServer:
         logger.info("Knowledge Management System sources configured.")
 
 
-    def register_agent(self, agent: Agent):
-        """
-        Registers an agent with the MCPServer.
-
-        Adds the agent's execution method as a node in the workflow and
-        its prompt template to the prompt registry.
-
-        Args:
-            agent (Agent): The agent instance to register.
-
-        Raises:
-            ValueError: If the provided agent is not an instance of the Agent class.
-        """
-        if not isinstance(agent, Agent):
-            raise ValueError("Invalid agent type. Agent must be an instance of the Agent class.")
-        self.workflow.add_node(agent.role, agent.execute)
-        self.prompt_engine.add_template(agent.role, agent.prompt_template)
-        print(f"Agent '{agent.role}' registered with MCPServer workflow.")
-
-    def add_workflow_transition(self, from_role: str, to_role: str, condition=None):
-        """
-        Adds a transition between two agent roles in the workflow.
-
-        Args:
-            from_role (str): The role of the agent from which the transition originates.
-            to_role (str): The role of the agent to which the transition leads.
-            condition (Optional[Callable]): A condition that must be met for the
-                                           transition to occur. Defaults to None.
-        """
-        self.workflow.add_edge(from_role, to_role, condition)
-        print(f"Workflow transition added from '{from_role}' to '{to_role}'.")
-
-    def get_resolved_prompt_for_agent(self, role: str, variables: Dict[str, Any]) -> str | None:
-        """
-        Resolves a prompt template for a given agent role using provided variables.
-
-        Args:
-            role (str): The role of the agent for whom the prompt is being resolved.
-            variables (Dict[str, Any]): A dictionary of variables to substitute
-                                       into the prompt template.
-
-        Returns:
-            Optional[str]: The resolved prompt string, or None if no template
-                           is found for the given role.
-        """
-        template = self.prompt_engine.get_template(role)
-        if template is None:
-            print(f"No prompt template found for agent role: {role}")
-            return None
-        resolved_prompt = self.prompt_engine.resolve_prompt(template, variables)
-        print(f"Prompt resolved for agent role: {role}")
-        return resolved_prompt
-
-    def execute_workflow(self, initial_state: GameDevState, start_agent_role: str) -> GameDevState:
-        """
-        Executes the defined workflow starting from a specific agent role.
-
-        Args:
-            initial_state (GameDevState): The initial state for the workflow.
-            start_agent_role (str): The role of the agent where the workflow execution begins.
-
-        Returns:
-            GameDevState: The final state after the workflow execution completes.
-
-        Raises:
-            ValueError: If the initial_state is not a GameDevState instance or
-                        if the start_agent_role is not registered in the workflow.
-        """
-        if not isinstance(initial_state, GameDevState):
-            raise ValueError("Initial state must be an instance of GameDevState.")
-        if start_agent_role not in self.workflow.nodes:
-            raise ValueError(f"Start agent role '{start_agent_role}' not registered in the workflow.")
-        print(f"Executing MCP workflow starting with agent '{start_agent_role}'.")
-        final_state = self.workflow.run(initial_state, start_node_name=start_agent_role)
-        print("MCP workflow execution finished.")
-        return final_state
-
-    # --- Toolchain Integration Methods (Existing) ---
     def send_muse_command(self, command_type: str, command_text: str, agent_id: str = None):
         """
         Sends a command to the Muse toolchain via its bridge.
@@ -467,11 +276,14 @@ class MCPServer:
 
         try:
             print(f"[API Request] Task ID: {task_id}, Agent ID: {agent_id_req}, Params: {parameters}")
-            if agent_id_req in self.agents:
-                agent_instance = self.agents[agent_id_req]
+            # This assumes self.agents is populated, which it isn't in the current FastAPI startup.
+            # This logic needs to use app.state.registered_agents
+            # For now, this part of handle_api_request will likely not work as intended.
+            if agent_id_req in app.state.registered_agents: # Corrected to use app.state
+                agent_instance = app.state.registered_agents[agent_id_req]
                 if hasattr(agent_instance, 'handle_direct_request') and callable(agent_instance.handle_direct_request):
                     # Call the agent's specific handler for direct requests
-                    result_data = agent_instance.handle_direct_request(parameters)
+                    result_data = agent_instance.handle_direct_request(parameters) # This should be async if agent method is async
                     return {"task_id": task_id, "status": "success", "result": result_data, "error": None}
                 else:
                     print(f"[ERROR] Agent '{agent_id_req}' does not have a callable 'handle_direct_request' method.")
@@ -495,12 +307,15 @@ class MCPServer:
                 return {"task_id": task_id, "status": "success", "result": {"asset_data": asset_data}, "error": None}
 
             elif agent_id_req == "unity":
-                if self.unity_bridge is None: raise ConnectionError("Unity toolchain not available.")
+                # Use the unity_bridge instance from app.state if available
+                unity_bridge_to_use = getattr(app.state, 'unity_bridge_instance', None)
+                if unity_bridge_to_use is None: raise ConnectionError("Unity toolchain not available in app.state.")
                 command_type = parameters.get("command_type")
                 command_args = parameters.get("arguments", {})
                 if command_type is None:
                     raise ValueError("Missing 'command_type' for Unity toolchain.")
-                unity_response = self.unity_bridge.send_command(command_type, command_args)
+                # Assuming send_command is synchronous or MCPClient handles async
+                unity_response = unity_bridge_to_use.send_command(command_type, command_args)
                 return {"task_id": task_id, "status": "success", "result": {"unity_response": unity_response}, "error": None}
             
             else:
@@ -552,7 +367,8 @@ class MCPServer:
         }
         
         # Call the internal handle_api_request method
-        response = await self.handle_api_request(request_data)
+        # This needs to be async if handle_api_request becomes async due to agent calls
+        response = self.handle_api_request(request_data) # Assuming handle_api_request is sync for now
         
         if response.get("status") == "success":
             logger.info(f"MCPServer: Successfully dispatched task {task_id} to {task_spec.get('target_agent_alias')}.")
@@ -591,173 +407,120 @@ class MCPServer:
         """
         Allows agents to request dynamic tool composition and execution.
         """
-        logger.info(f"MCPServer: Request for dynamic tool composition for goal: '{task_goal}'.")
+        logger.info(f"MCPServer: Composing and executing tools for goal: {task_goal}")
         try:
-            results = await self.dynamic_tool_composer.compose_and_execute_tool_sequence(task_goal, initial_state)
-            logger.info(f"MCPServer: Dynamic tool composition completed for goal '{task_goal}'.")
-            return {"status": "success", "results": results}
+            composed_tool_result = await self.dynamic_tool_composer.compose_and_execute(task_goal, initial_state)
+            logger.info(f"MCPServer: Tool composition and execution completed for goal: {task_goal}")
+            return {"status": "success", "result": composed_tool_result}
         except Exception as e:
-            logger.error(f"MCPServer: Dynamic tool composition failed for goal '{task_goal}': {e}")
-            return {"status": "failed", "message": f"Dynamic tool composition failed: {str(e)}"}
+            logger.error(f"MCPServer: Error during tool composition and execution for goal '{task_goal}': {e}")
+            return {"status": "failed", "message": str(e)}
 
     async def _post_mcp_event(self, event_type: str, event_data: Dict[str, Any]):
         """
-        Internal method to post events to the MCP (e.g., for conflict resolution notifications).
-        This would typically send to a dedicated event endpoint or log.
+        Helper method to post events back to the MCP server's /post_event endpoint.
+        This acts as the mcp_event_notifier for the CreativeConflictResolver.
         """
-        logger.info(f"[MCP Event] Type: {event_type}, Data: {event_data}")
-        # In a real system, this would be sent to a message queue or a dedicated event API.
-        # For now, it just logs.
+        logger.info(f"MCPServer: Posting event to MCP: Type='{event_type}', Data='{event_data}'")
+        # In a real scenario, this would make an HTTP request to the /post_event endpoint.
+        # For now, we'll just log it.
+        # You might want to use a dedicated client for this, e.g., self.mcp_client.post_event(...)
+        # For this implementation, we'll simulate the effect or directly call the relevant StateManager method
+        # if the event is meant to update a task graph.
+        
+        # If the event is related to a task, we should update the state manager.
+        task_id = event_data.get("task_id")
+        if task_id:
+            # This is a simplified direct call, bypassing the API route for internal events.
+            # In a more robust system, this might go through a local queue or a dedicated internal event bus.
+            # For now, we assume the StateManager is directly accessible.
+            # This requires the StateManager to be initialized and accessible within MCPServer.
+            # This is a placeholder and needs proper integration with the FastAPI app's state.
+            print(f"Simulating event post to StateManager for task {task_id}")
+            # This part needs to be handled by the FastAPI app's state, not directly here.
+            # The MCPServer class itself doesn't have direct access to app.state.
+            # This method is called by CreativeConflictResolver, which is instantiated within MCPServer.
+            # So, this needs to be a mechanism to send an event to the FastAPI app's /post_event endpoint.
+            # For now, we'll just log it.
+            pass # Placeholder for actual event posting logic
 
-    # --- Collaboration Manager Interface Methods ---
-    async def register_agent_with_collab_manager(self, agent_id: str, capabilities: List[str]):
-        """Registers an agent with the CollaborationManager."""
-        self.collaboration_manager.register_agent(agent_id, capabilities)
+# FastAPI App Setup
+app = FastAPI(
+    title="MCP Server API",
+    description="Master Control Program for Autonomous AI Agent Ecosystem",
+    version="0.1.0",
+)
 
-    async def update_agent_status_in_collab_manager(self, agent_id: str, status: str, current_task_id: Optional[str] = None):
-        """Updates an agent's status in the CollaborationManager."""
-        self.collaboration_manager.update_agent_status(agent_id, status, current_task_id)
-
-    async def request_agent_assistance(self, requesting_agent_id: str, original_task_id: str, required_capability: str, task_details: Dict[str, Any]) -> Optional[str]:
-        """Handles an agent's request for assistance."""
-        return await self.collaboration_manager.request_assistance(requesting_agent_id, original_task_id, required_capability, task_details)
-
-    async def update_assistance_request_status(self, request_id: str, status: str, result_data: Optional[Dict] = None):
-        """Updates the status of an assistance request."""
-        self.collaboration_manager.update_assistance_request_status(request_id, status, result_data)
-
-    # --- Agent Event Bus Interface Methods ---
-    async def publish_agent_event(self, source_agent_id: str, event_type: str, data: Dict[str, Any]):
-        """Publishes an event to the AgentEventBus."""
-        await self.agent_event_bus.publish_event(source_agent_id, event_type, data)
-
-    async def subscribe_to_agent_event(self, event_type: str, callback: Callable):
-        """Subscribes a callback to an event type on the AgentEventBus."""
-        await self.agent_event_bus.subscribe(event_type, callback)
-
-    async def unsubscribe_from_agent_event(self, event_type: str, callback: Callable):
-        """Unsubscribes a callback from an event type on the AgentEventBus."""
-        await self.agent_event_bus.unsubscribe(event_type, callback)
-
-    # --- Tool Registry Interface Methods ---
-    async def register_external_tool(self, tool_instance: AbstractToolInterface) -> bool:
-        """Registers an external tool with the ToolRegistry."""
-        return self.tool_registry.register_tool(tool_instance)
-
-    async def unregister_external_tool(self, tool_id: str) -> bool:
-        """Unregisters an external tool from the ToolRegistry."""
-        return self.tool_registry.unregister_tool(tool_id)
-
-    async def list_external_tools(self) -> List[Dict[str, Any]]:
-        """Lists metadata of all registered external tools."""
-        return self.tool_registry.list_tools()
-
-    async def execute_external_tool(self, tool_id: str, parameters: Dict[str, Any], execution_context: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-        """Executes a registered external tool."""
-        return await self.tool_registry.execute_tool(tool_id, parameters, execution_context)
-
-
-# --- Flask Application Setup ---
-app = Flask(__name__)
-mcp_server_instance = None
-
-def get_mcp_server_instance():
+@app.on_event("startup")
+async def startup_event():
     """
-    Retrieves or initializes the global MCPServer instance.
-
-    This function implements a singleton pattern for the MCPServer instance
-    to ensure it's created only once and shared across Flask requests.
-
-    Returns:
-        MCPServer: The singleton MCPServer instance.
+    Initializes StateManager, PromptRegistry, and registers mock agents on startup.
     """
-    global mcp_server_instance
-    if mcp_server_instance is None:
-        print("[INFO] Initializing MCPServer instance for Flask app...")
-        mcp_server_instance = MCPServer()
-        print("[INFO] MCPServer instance created.")
-    return mcp_server_instance
+    print("[INFO] MCP Server startup event triggered.")
+    app.state.registered_agents = {} # Dictionary to store AgentInfo objects
+    app.state.state_manager = StateManager(registered_agents=app.state.registered_agents) # Pass registered_agents to StateManager
+    app.state.prompt_registry = PromptRegistry()
 
-@app.route('/execute_agent', methods=['POST'])
-def execute_agent_route():
-    """
-    Flask route to handle agent execution requests.
-
-    Receives a JSON POST request, validates it, and passes it to the
-    MCPServer's `handle_api_request` method for processing. Returns a
-    JSON response with the outcome.
-
-    Returns:
-        Tuple[Response, int]: A Flask JSON response and an HTTP status code.
-    """
-    if not request.is_json:
-        return jsonify({
-            "task_id": "unknown_task", "status": "failed", "result": None,
-            "error": {"code": "INVALID_REQUEST", "message": "Request content type must be application/json."}
-        }), 400
+    # Instantiate and register actual agent instances
+    mcp_server_url = os.environ.get("MCP_SERVER_URL", "http://127.0.0.1:5000")
     
-    request_data = request.get_json()
-    task_id_from_req = request_data.get("task_id", "unknown_task_in_request")
+    # Instantiate UnityToolchainBridge and store it on app.state
+    app.state.unity_bridge_instance = None # Initialize
+    if "unity_bridge" in _toolchain_classes:
+        try:
+            # The UnityToolchainBridge expects an mcp_server_instance.
+            # For now, passing None. This might need adjustment.
+            app.state.unity_bridge_instance = _toolchain_classes["unity_bridge"](mcp_server_instance=None) 
+            print("[INFO] UnityToolchainBridge initialized in startup_event and stored in app.state.")
+        except Exception as e:
+            print(f"[ERROR] Failed to initialize UnityToolchainBridge in startup_event: {e}")
 
-    try:
-        server = get_mcp_server_instance()
-        response_data = server.handle_api_request(request_data)
-        
-        http_status_code = 200
-        if response_data.get("status") == "failed":
-            error_code = response_data.get("error", {}).get("code")
-            if error_code == "AGENT_NOT_FOUND": http_status_code = 404
-            elif error_code in ["INVALID_REQUEST", "INVALID_PARAMETERS"]: http_status_code = 400
-            else: http_status_code = 500 # EXECUTION_ERROR, TOOLCHAIN_CONNECTION_ERROR, AGENT_INTERFACE_ERROR etc.
-        
-        return jsonify(response_data), http_status_code
-    except Exception as e:
-        import traceback
-        print(f"[CRITICAL ERROR] Unexpected error in execute_agent_route: {e}\n{traceback.format_exc()}")
-        return jsonify({
-            "task_id": task_id_from_req,
-            "status": "failed",
-            "result": None,
-            "error": {"code": "SERVER_ERROR", "message": f"An unexpected server error occurred: {str(e)}"}
-        }), 500
+    for agent_id, agent_class in _agent_classes.items():
+        agent_specific_kwargs = {"agent_id": agent_id, "mcp_server_url": mcp_server_url}
+        if agent_id == "level_architect":
+            agent_specific_kwargs["unity_bridge"] = app.state.unity_bridge_instance # Pass the instance from app.state
+            
+        agent_instance = agent_class(**agent_specific_kwargs)
+        app.state.registered_agents[agent_id] = agent_instance
+        print(f"[INFO] Registered agent instance: {agent_id}")
 
-@app.route('/status', methods=['GET'])
-def status_route():
-    """
-    Provides a simple status endpoint for the MCP server.
-    """
-    return jsonify({"status": "running", "message": "MCP Server is operational."}), 200
+    # Register Level Architect prompt
+    level_architect_prompt_template = """System: You are a virtual environment architect specializing in residential spaces.
+- Reconstruct layouts from reference images with ±2% dimensional accuracy
+- Maintain architectural coherence across all scene elements
+- Generate UV maps optimized for retro pixel art pipelines
 
-@app.route('/agents', methods=['GET'])
-def list_agents_route():
-    """
-    Lists all registered agents and their capabilities.
-    """
-    server = get_mcp_server_instance()
-    agent_info = {agent_id: agent.capabilities for agent_id, agent in server.agents.items()}
-    return jsonify({"agents": agent_info}), 200
+User Input:
+{{
+  "reference_image": "{reference_image}",
+  "style_constraints": "{style_constraints}",
+  "interactive_elements": "{interactive_elements}"
+}}
+"""
+    app.state.prompt_registry.register_prompt(
+        prompt_name="level_architect_design_prompt",
+        template=level_architect_prompt_template,
+        required_variables=["reference_image", "style_constraints", "interactive_elements"],
+        agent_type="level_architect"
+    )
+    print("[INFO] Registered 'level_architect_design_prompt' with PromptRegistry.")
 
-@app.route('/toolchains', methods=['GET'])
-def list_toolchains_route():
-    """
-    Lists all available toolchains.
-    """
-    server = get_mcp_server_instance()
-    toolchain_info = {}
-    if server.muse_bridge:
-        toolchain_info["muse"] = {"available": True}
-    if server.retro_diffusion_bridge:
-        toolchain_info["retro_diffusion"] = {"available": True}
-    if server.unity_bridge:
-        toolchain_info["unity"] = {"available": True}
-    return jsonify({"toolchains": toolchain_info}), 200
+    print("[INFO] MCP Server startup complete.")
 
-if __name__ == '__main__':
-    # This block is for direct execution of the server for testing/development.
-    # In a production environment, it might be run via a WSGI server like Gunicorn.
-    host = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
-    port = int(os.environ.get("MCP_SERVER_PORT", 5000))
-    print(f"[INFO] Starting MCP Server on {host}:{port}...")
-    # Initialize the server instance to ensure agents/toolchains are loaded at startup
-    get_mcp_server_instance() 
-    app.run(host=host, port=port, debug=True, use_reloader=False) # debug=True for development
+# Include API routes
+app.include_router(api_router, prefix="/api/v1")
+
+# This block is for direct execution of the FastAPI app using Uvicorn.
+# In a production setup (e.g., with Gunicorn), this block is not used.
+if __name__ == "__main__":
+    import uvicorn
+    # Add the project root to sys.path to ensure 'src' can be found as a package
+    # This is a common pattern for running uvicorn from within a sub-module
+    # and ensuring imports relative to the project root work.
+    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, PROJECT_ROOT)
+        print(f"[INFO] Added {PROJECT_ROOT} to sys.path for module resolution.")
+
+    print("[INFO] Starting Uvicorn development server...")
+    uvicorn.run("src.mcp_server.server_core:app", host="0.0.0.0", port=5000, reload=True)

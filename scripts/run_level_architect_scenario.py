@@ -83,10 +83,12 @@ async def run_scenario():
         # that the MCP's StateManager is using.
         agent_task_details = {
             "task_id": task_id_from_mcp, # Use the task_id from MCP
-            "prompt": action_request_payload["parameters"]["prompt"],
-            "theme": action_request_payload["parameters"]["theme"],
-            "constraints": action_request_payload["parameters"]["constraints"],
-            "context_data": {} # Add any other relevant context
+            "parameters": {
+                "prompt": action_request_payload["parameters"]["prompt"],
+                "theme": action_request_payload["parameters"]["theme"],
+                "constraints": action_request_payload["parameters"]["constraints"]
+            },
+            "current_event": {} # Empty current event for initial call
         }
         
         logger.info(f"Simulating agent '{AGENT_ID}' processing task '{task_id_from_mcp}'...")

@@ -9,13 +9,12 @@ from src.mcp_server.models.api_models import (
     PostEventRequest, PostEventResponse,
     ActionRequest, ActionResponse,
     ToolExecutionRequest, ToolExecutionResponse,
+    ExecuteAgentRequest, ExecuteAgentResponse, # Added for /execute_agent endpoint
     StatusResponse,
     ManagedTaskState, # Added for task status response
     PromptRegistrationRequest, PromptRegistrationResponse,
     PromptResolutionRequest, PromptResolutionResponse
 )
-# from src.mcp_server.core.state_manager import StateManager # No longer needed here, accessed via app.state
-# from src.mcp_server.core.prompt_registry import PromptRegistry # No longer needed here, accessed via app.state
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,10 +24,7 @@ router = APIRouter()
 
 # In-memory storage for registered agents and events (for now)
 # In a real application, this would be a database or other persistent storage.
-# registered_agents: Dict[str, AgentInfo] = {} # Will be accessed via app.state
 events_log: List[Dict[str, Any]] = [] # This can remain local if not shared across app instances or modules
-# state_manager = StateManager() # Initialize StateManager instance - will be accessed via app.state
-# prompt_registry = PromptRegistry() # Will be accessed via app.state
 
 MCP_SERVER_VERSION = "0.1.0-alpha" # Example version
 
@@ -95,7 +91,7 @@ async def post_event(event_data: PostEventRequest, request: Request):
     events_log.append(event_record) # Storing in-memory for now
     
     state_manager: StateManager = request.app.state.state_manager
-    task_id = event_data.event_data.get("task_id")
+    task_id = event_data.task_id
 
     if not task_id:
         logger.error(f"Event received without task_id in event_data: {event_data.event_data}")
@@ -106,7 +102,7 @@ async def post_event(event_data: PostEventRequest, request: Request):
         logger.info(f"Event for task_id {task_id} will be processed by StateManager.")
         # Pass the agent's specific event_data to the graph.
         # The graph's nodes will need to be designed to interpret this event_input.
-        updated_state = state_manager.invoke_graph_update(task_id=str(task_id), event_input=event_data.event_data)
+        updated_state = await state_manager.invoke_graph_update(task_id=str(task_id), event_input=event_data.event_data)
         if updated_state:
             logger.info(f"Task {task_id} updated by event. New status: {updated_state.status}, Step: {updated_state.current_step}")
         else:
@@ -137,14 +133,16 @@ async def request_action(action_data: ActionRequest, request: Request):
     
     logger.info(f"Action request {request_id} for agent {action_data.target_agent_id} will be dispatched (simulated). Task details will be managed by StateManager.")
 
-    initial_task_input = action_data.parameters or {}
-    initial_task_input["action_type"] = action_data.action_type
-    initial_task_input["target_agent_id"] = action_data.target_agent_id
-    initial_task_input["original_request_id"] = str(request_id) # Keep track of original API request ID
-
-    # Initialize and invoke a new LangGraph instance for this task
     # The request_id can serve as the task_id for LangGraph
     task_id = str(request_id)
+
+    initial_task_input = {
+        "task_id": task_id, # Add task_id to the initial input
+        "parameters": action_data.parameters or {},
+        "action_type": action_data.action_type,
+        "target_agent_id": action_data.target_agent_id,
+        "original_request_id": str(request_id) # Keep track of original API request ID
+    }
     
     try:
         logger.info(f"Initializing LangGraph task {task_id} with input: {initial_task_input}")
@@ -165,7 +163,7 @@ async def request_action(action_data: ActionRequest, request: Request):
         # The current StateManager's invoke_graph_update will run the simple graph.
         logger.info(f"Invoking LangGraph task {task_id} for processing...")
         state_manager: StateManager = request.app.state.state_manager
-        final_state = state_manager.invoke_graph_update(task_id=task_id, event_input=initial_task_input) # Pass input again if needed by steps
+        final_state = await state_manager.invoke_graph_update(task_id=task_id, event_input=initial_task_input) # Pass input again if needed by steps
 
         if final_state:
             logger.info(f"LangGraph task {task_id} processed. Final state: {final_state.status}, Step: {final_state.current_step}")
@@ -204,6 +202,108 @@ async def get_task_status(task_id: str, request: Request):
         )
     return task_state
 
+@router.post("/execute_agent", response_model=ExecuteAgentResponse, status_code=status.HTTP_200_OK)
+async def execute_agent(agent_request: ExecuteAgentRequest, request: Request):
+    """
+    Allows an external system to request an agent to perform a task or execute a tool.
+    This endpoint acts as a unified entry point for various agent-related operations.
+    """
+    task_id = agent_request.task_id
+    agent_id_req = agent_request.agent_id
+    parameters = agent_request.parameters
+
+    logger.info(f"POST /execute_agent request received. Task ID: {task_id}, Agent ID: {agent_id_req}, Parameters: {parameters}")
+
+    state_manager = request.app.state.state_manager
+    registered_agents = request.app.state.registered_agents
+
+    try:
+        if agent_id_req in registered_agents:
+            agent_info = registered_agents[agent_id_req]
+            # For now, we'll simulate direct execution or pass to state manager
+            # In a real scenario, this would involve calling the agent's endpoint
+            # or triggering a specific agent workflow via the state manager.
+            logger.info(f"Agent '{agent_id_req}' found. Simulating execution.")
+            
+            # This part needs to be aligned with how agents actually receive and process requests.
+            # If agents have their own endpoints, the MCP would forward the request.
+            # If agents are internal components, the state manager would orchestrate.
+            
+            # For now, let's assume the state manager can handle this as a task initiation
+            # or a specific step within a task.
+            initial_task_input = {
+                "task_id": task_id,
+                "agent_id": agent_id_req,
+                "parameters": parameters,
+                "action_type": "execute_agent_request" # A generic action type for this endpoint
+            }
+            
+            # Initialize and invoke a new LangGraph instance for this task
+            initial_state = state_manager.initialize_task_graph(task_id=task_id, initial_input=initial_task_input)
+            if not initial_state:
+                logger.error(f"Failed to initialize LangGraph for task {task_id} via /execute_agent.")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to initialize task processing for agent execution."
+                )
+            
+            # Invoke the graph to process the request. The graph's nodes will determine
+            # how the agent_id and parameters are handled (e.g., calling agent's endpoint,
+            # triggering internal agent logic).
+            final_state = await state_manager.invoke_graph_update(task_id=task_id, event_input=initial_task_input)
+
+            if final_state and final_state.status == "completed":
+                return ExecuteAgentResponse(
+                    task_id=task_id,
+                    status="success",
+                    result={"message": f"Agent '{agent_id_req}' executed successfully.", "final_state": final_state.dict()}
+                )
+            else:
+                # If the task is not immediately completed, or if it's still processing
+                # or failed within the graph.
+                error_message = f"Agent '{agent_id_req}' execution initiated, but task status is '{final_state.status if final_state else 'unknown'}'. Check /task_status/{task_id} for details."
+                logger.warning(error_message)
+                return ExecuteAgentResponse(
+                    task_id=task_id,
+                    status="processing" if final_state else "failed",
+                    result={"message": error_message},
+                    error={"code": "TASK_IN_PROGRESS_OR_FAILED", "message": error_message}
+                )
+
+        # Handle specific toolchain calls if they are not registered as agents
+        # This part mirrors the logic from server_core.py's handle_api_request
+        elif agent_id_req == "muse":
+            # Assuming muse_bridge is accessible via app.state or a similar mechanism
+            # For now, this is a placeholder. Actual implementation needs the bridge.
+            # if request.app.state.muse_bridge is None: raise HTTPException(status_code=503, detail="Muse toolchain not available.")
+            # muse_response = request.app.state.muse_bridge.send_command(...)
+            logger.info("Muse toolchain call simulated.")
+            return ExecuteAgentResponse(task_id=task_id, status="success", result={"message": "Muse toolchain call simulated."})
+
+        elif agent_id_req == "retro_diffusion":
+            logger.info("Retro Diffusion toolchain call simulated.")
+            return ExecuteAgentResponse(task_id=task_id, status="success", result={"message": "Retro toolchain call simulated."})
+        
+        elif agent_id_req == "unity":
+            logger.info("Unity toolchain call simulated.")
+            return ExecuteAgentResponse(task_id=task_id, status="success", result={"message": "Unity toolchain call simulated."})
+
+        else:
+            logger.warning(f"Agent or toolchain '{agent_id_req}' not found.")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Agent or toolchain with ID '{agent_id_req}' not found."
+            )
+
+    except HTTPException:
+        raise # Re-raise FastAPI HTTPExceptions
+    except Exception as e:
+        logger.error(f"Error processing /execute_agent request for task {task_id}, agent {agent_id_req}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An internal server error occurred: {e}"
+        )
+
 @router.post("/execute_tool_on_agent", response_model=ToolExecutionResponse, status_code=status.HTTP_202_ACCEPTED)
 async def execute_tool_on_agent(tool_request: ToolExecutionRequest, request: Request):
     """
@@ -227,12 +327,46 @@ async def execute_tool_on_agent(tool_request: ToolExecutionRequest, request: Req
     # 2. Forwarding the request to the agent.
     # 3. Handling responses.
     # For now, log and acknowledge.
-    logger.info(f"Tool execution request {execution_id} for agent {tool_request.target_agent_id} acknowledged.")
+    initial_task_input = tool_request.parameters or {}
+    initial_task_input["tool_name"] = tool_request.tool_name
+    initial_task_input["target_agent_id"] = tool_request.target_agent_id
+    initial_task_input["original_execution_id"] = str(execution_id) # Keep track of original API request ID
+
+    # Initialize and invoke a new LangGraph instance for this task
+    task_id = str(execution_id)
+    
+    try:
+        logger.info(f"Initializing LangGraph task {task_id} for tool execution with input: {initial_task_input}")
+        state_manager: StateManager = request.app.state.state_manager
+        initial_state = state_manager.initialize_task_graph(task_id=task_id, initial_input=initial_task_input)
+        
+        if not initial_state:
+            logger.error(f"Failed to initialize LangGraph for tool execution task {task_id}.")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to initialize tool execution task processing."
+            )
+
+        logger.info(f"LangGraph tool execution task {task_id} initialized. Current state: {initial_state.status}, Step: {initial_state.current_step}")
+
+        # Invoke the graph to start processing the tool execution
+        logger.info(f"Invoking LangGraph tool execution task {task_id} for processing...")
+        final_state = await state_manager.invoke_graph_update(task_id=task_id, event_input=initial_task_input)
+
+        if final_state:
+            logger.info(f"LangGraph tool execution task {task_id} processed. Final state: {final_state.status}, Step: {final_state.current_step}")
+        else:
+            logger.warning(f"LangGraph tool execution task {task_id} invocation did not return a final state immediately or an error occurred. Check logs.")
+            
+    except Exception as e:
+        logger.error(f"Error during LangGraph processing for tool execution task {task_id}: {e}", exc_info=True)
+        # For now, if init fails, we raise. If invoke fails, we log and proceed.
 
     return ToolExecutionResponse(
         message="Tool execution request received and acknowledged. Processing is asynchronous.",
         execution_id=execution_id
     )
+
 @router.post("/register_prompt", response_model=PromptRegistrationResponse, status_code=status.HTTP_201_CREATED)
 async def register_prompt(prompt_data: PromptRegistrationRequest, request: Request):
     """
@@ -247,10 +381,6 @@ async def register_prompt(prompt_data: PromptRegistrationRequest, request: Reque
             required_variables=prompt_data.required_vars, # Changed from required_vars to required_variables
             # description is not a direct param of register_prompt, but could be stored if model is extended
             # For now, we map what the Pydantic model provides to what the method expects.
-            # The PromptRegistrationRequest model has 'description', but PromptRegistry.register_prompt doesn't.
-            # Let's assume agent_type could be derived or is optional.
-            # If description needs to be stored, PromptRegistry.register_prompt needs an update.
-            # For now, passing None or omitting for agent_type if not in PromptRegistrationRequest.
             # The Pydantic model PromptRegistrationRequest does not have agent_type.
             # So we call register_prompt with available mapped fields.
         )

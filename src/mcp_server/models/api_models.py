@@ -23,6 +23,7 @@ class DiscoverAgentsResponse(BaseModel):
 class PostEventRequest(BaseModel):
     event_type: str
     event_data: Dict[str, Any]
+    task_id: Optional[str] = None # Add task_id as an optional field
 
 class PostEventResponse(BaseModel):
     message: str
@@ -45,6 +46,17 @@ class ToolExecutionRequest(BaseModel):
 class ToolExecutionResponse(BaseModel):
     message: str
     execution_id: uuid.UUID
+
+class ExecuteAgentRequest(BaseModel):
+    task_id: str
+    agent_id: str
+    parameters: Dict[str, Any] = {}
+
+class ExecuteAgentResponse(BaseModel):
+    task_id: str
+    status: str # "success" or "failed"
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[Dict[str, Any]] = None
 
 class StatusResponse(BaseModel):
     status: str
