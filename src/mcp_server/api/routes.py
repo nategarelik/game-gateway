@@ -270,6 +270,38 @@ async def execute_agent(agent_request: ExecuteAgentRequest, request: Request):
                     error={"code": "TASK_IN_PROGRESS_OR_FAILED", "message": error_message}
                 )
 
+        elif agent_id_req == "orchestrator":
+            logger.info("Orchestrator agent call initiated.")
+            initial_task_input = {
+                "task_id": task_id,
+                "agent_id": agent_id_req,
+                "parameters": parameters,
+                "action_type": "orchestrator_request"
+            }
+            initial_state = state_manager.initialize_task_graph(task_id=task_id, initial_input=initial_task_input)
+            if not initial_state:
+                logger.error(f"Failed to initialize LangGraph for Orchestrator task {task_id}.")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to initialize Orchestrator task processing."
+                )
+            final_state = await state_manager.invoke_graph_update(task_id=task_id, event_input=initial_task_input)
+
+            if final_state and final_state.status == "completed":
+                return ExecuteAgentResponse(
+                    task_id=task_id,
+                    status="success",
+                    result={"message": f"Orchestrator task '{task_id}' completed.", "final_state": final_state.dict()}
+                )
+            else:
+                error_message = f"Orchestrator task '{task_id}' initiated, but status is '{final_state.status if final_state else 'unknown'}'. Check /task_status/{task_id} for details."
+                logger.warning(error_message)
+                return ExecuteAgentResponse(
+                    task_id=task_id,
+                    status="processing" if final_state else "failed",
+                    result={"message": error_message},
+                    error={"code": "ORCHESTRATOR_TASK_STATUS", "message": error_message}
+                )
         # Handle specific toolchain calls if they are not registered as agents
         # This part mirrors the logic from server_core.py's handle_api_request
         elif agent_id_req == "muse":
