@@ -1,7 +1,7 @@
 {
-  "name": "com.unity-agent-mcp",
+  "name": "com.game-gateway",
   "version": "1.0.0",
-  "displayName": "Unity Agent MCP",
+  "displayName": "The Game Gateway",
   "description": "Integration package for the Autonomous AI Agent Ecosystem for Unity Game Development",
   "unity": "2022.3",
   "dependencies": {},
@@ -12,8 +12,8 @@
     "game development"
   ],
   "author": {
-    "name": "Unity Agent MCP Team",
-    "email": "example@example.com",
+    "name": "Nathaniel Garelik",
+    "email": "nate2g8@gmail.com",
     "url": "https://github.com/nategarelik/game-gateway"
   }
 }
