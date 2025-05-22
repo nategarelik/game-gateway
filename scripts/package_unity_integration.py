@@ -8,6 +8,9 @@ import json
 import uuid
 from pathlib import Path
 
+# Add this import to read the package.json
+import json
+
 def generate_meta_file(file_path: Path):
     """Generates a basic .meta file for a given file or directory path."""
     meta_path = file_path.with_suffix(file_path.suffix + '.meta')
@@ -66,8 +69,13 @@ def create_unity_package():
                 if file_path.suffix in ['.cs', '.asmdef', '.md', '.json']: # Include common asset types
                     generate_meta_file(file_path)
         
+        # Read package.json to get the package name
+        with open(unity_package_dir / 'package.json', 'r') as f:
+            package_json = json.load(f)
+        package_name_from_json = package_json.get('name', 'com.unity-agent-mcp') # Default if name not found
+
         # Create the tgz package
-        package_name = 'com.unity-agent-mcp.tgz'
+        package_name = f"{package_name_from_json}.tgz"
         output_path = unity_package_dir / package_name
         
         # Use npm pack to create the package
@@ -75,7 +83,9 @@ def create_unity_package():
             ['npm', 'pack'],
             cwd=temp_dir,
             capture_output=True,
-            text=True
+            text=True,
+            env=os.environ,
+            shell=True
         )
         
         if result.returncode != 0:
