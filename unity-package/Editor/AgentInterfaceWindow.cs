@@ -5,6 +5,8 @@ using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using Newtonsoft.Json;
+using Newtonsoft.Json;
 
 namespace UnityAgentMCP.Editor
 {
@@ -86,7 +88,7 @@ namespace UnityAgentMCP.Editor
                         }
                     };
 
-                    string json = JsonUtility.ToJson(requestData);
+                    string json = JsonConvert.SerializeObject(requestData);
                     var content = new StringContent(json, Encoding.UTF8, "application/json");
 
                     HttpResponseMessage httpResponse = await client.PostAsync($"{serverUrl}/execute_agent", content);

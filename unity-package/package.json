@@ -4,7 +4,9 @@
   "displayName": "The Game Gateway",
   "description": "Integration package for the Autonomous AI Agent Ecosystem for Unity Game Development",
   "unity": "2022.3",
-  "dependencies": {},
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.0.2"
+  },
   "keywords": [
     "ai",
     "agent",
