@@ -10,7 +10,7 @@ namespace UnityAgentMCP.Editor
 {
     public class AgentInterfaceWindow : EditorWindow
     {
-        private string[] agentTypes = new string[] { "Level Architect", "Code Weaver", "Documentation Sentinel", "Pixel Forge" };
+        private string[] agentTypes = new string[] { "Level Architect", "Code Weaver", "Documentation Sentinel", "Pixel Forge", "Orchestrator" };
         private int selectedAgentIndex = 0;
         private string prompt = "";
         private string response = "";
@@ -115,11 +115,12 @@ namespace UnityAgentMCP.Editor
         {
             switch (selectedAgentIndex)
             {
-                case 0: return "level_architect";
+                case 0: return "orchestrator";
                 case 1: return "code_weaver";
                 case 2: return "documentation_sentinel";
                 case 3: return "pixel_forge";
-                default: return "level_architect";
+                case 4: return "level_architect";
+                default: return "orchestrator";
             }
         }
     }
