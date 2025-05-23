@@ -1,0 +1,113 @@
+name: Build and Package Unity Integration
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'unity-package/**'
+      - '.github/workflows/build-unity-package.yml'
+      - 'scripts/package_unity_integration.py'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'unity-package/**'
+      - '.github/workflows/build-unity-package.yml'
+      - 'scripts/package_unity_integration.py'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'Manual trigger'
+
+env:
+  UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+  UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+  UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+  PYTHON_VERSION: '3.10'
+
+jobs:
+  build-and-package:
+    name: Build and Package
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Build Docker image
+      run: |
+        docker build -t unity-package-builder .
+    
+    - name: Run package build in Docker
+      run: |
+        # Create artifacts directory
+        mkdir -p artifacts
+        
+        # Run the build in Docker
+        docker run --rm \
+          -v "$(pwd):/project" \
+          -e CI=true \
+          -e GITHUB_REF=$GITHUB_REF \
+          -e GITHUB_SHA=$GITHUB_SHA \
+          unity-package-builder \
+          /bin/bash -c "python scripts/package_unity_integration.py"
+        
+        # Check if package was created
+        if [ ! -f "unity-package/"*.unitypackage ]; then
+          echo "No .unitypackage file was created"
+          exit 1
+        fi
+    
+    - name: Upload package artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: unity-package
+        path: |
+          unity-package/*.unitypackage
+          unity-package/com.game-gateway.tgz
+        retention-days: 5
+        if-no-files-found: error
+    
+    - name: Get current date
+      id: date
+      run: echo "date=$(date +'%Y.%-m.%-d')" >> $GITHUB_OUTPUT
+
+    - name: Create GitHub Release
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: softprops/action-gh-release@v1
+      with:
+        name: "Unity Package ${{ steps.date.outputs.date }}"
+        tag_name: "v${{ steps.date.outputs.date }}"
+        body: |
+          ### Changes
+          - Auto-generated Unity package
+          - Built from commit: ${{ github.sha }}
+          
+          ### How to Install
+          1. Download the .unitypackage or .tgz file
+          2. For .unitypackage: Double-click to import into Unity
+          3. For .tgz: Add via Unity Package Manager using path to file
+        files: |
+          unity-package/*.unitypackage
+          unity-package/com.game-gateway.tgz
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
