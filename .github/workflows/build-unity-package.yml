@@ -100,7 +100,7 @@ jobs:
           - Built from commit: ${{ github.sha }}
           
           ### How to Install
-          1. Download the .unitypackage or .tgz file
+          1. Download the .unitypackage or .tgz file.
           2. For .unitypackage: Double-click to import into Unity
           3. For .tgz: Add via Unity Package Manager using path to file
         files: |
